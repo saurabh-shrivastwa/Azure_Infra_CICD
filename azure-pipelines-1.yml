@@ -1,33 +1,51 @@
-trigger:
-  branches:
-    include:
-      - main
+name: Azure Terraform CI/CD
 
-pool:
-  vmImage: 'ubuntu-latest'
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
-steps:
-  - script: |
-      sudo apt-get update
-      sudo apt-get install -y wget unzip
-      wget https://releases.hashicorp.com/terraform/1.5.0/terraform_1.5.0_linux_amd64.zip
-      unzip terraform_1.5.0_linux_amd64.zip
-      sudo mv terraform /usr/local/bin/
-      terraform -version
-    displayName: "Install Terraform"
+permissions:
+  id-token: write
+  contents: read
 
-  - script: |
-      terraform init
-    displayName: "Terraform Init"
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_USE_OIDC: true
 
-  - script: |
-      terraform validate
-    displayName: "Terraform Validate"
+jobs:
+  terraform:
+    name: Azure Terraform
+    runs-on: ubuntu-latest
 
-  - script: |
-      terraform plan -out=tfplan
-    displayName: "Terraform Plan"
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-  - script: |
-      terraform apply -auto-approve tfplan
-    displayName: "Terraform Apply"
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.7.0
+
+    - name: Terraform Init
+      run: terraform init
+
+    - name: Terraform Validate
+      run: terraform validate
+
+    - name: Terraform Plan
+      run: terraform plan -out=tfplan
+
+    - name: Terraform Apply
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: terraform apply -auto-approve tfplan
