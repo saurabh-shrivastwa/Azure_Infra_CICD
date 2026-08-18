@@ -1,0 +1,81 @@
+trigger:
+  branches:
+    include:
+      - feature/*     # CI trigger on feature branches
+      - main          # optional
+
+# Variables (secure ones like client secret should be stored in Library)
+variables:
+  terraformVersion: '1.5.0'
+  workingDirectory: 'infra'
+
+stages:
+# =========================
+# CI Stage: Code Quality & Security
+# =========================
+- stage: CI
+  displayName: "Continuous Integration"
+  jobs:
+  - job: TerraformChecks
+    displayName: "Terraform Lint & Security Scan"
+    pool:
+      vmImage: 'ubuntu-latest'     # Microsoft-hosted agent
+    steps:
+      - script: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip
+          curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install.sh | bash
+          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install.sh | bash
+          curl -s https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | bash
+        displayName: "Install TFLint, tfsec, Gitleaks"
+
+      - task: TerraformInstaller@0
+        inputs:
+          terraformVersion: $(terraformVersion)
+
+      - script: |
+          echo "Running TFLint..."
+          tflint --init
+          tflint
+        displayName: "Run TFLint"
+
+      - script: |
+          echo "Running tfsec..."
+          tfsec $(workingDirectory)
+        displayName: "Run tfsec"
+
+      - script: |
+          echo "Running Gitleaks..."
+          gitleaks detect --source $(workingDirectory)
+        displayName: "Run Gitleaks"
+
+      - script: |
+          terraform init
+          terraform validate
+          terraform plan -out=tfplan
+        displayName: "Terraform Validate & Plan"
+
+# =========================
+# CD Stage: Deployment (Manual Approval)
+# =========================
+- stage: CD
+  displayName: "Continuous Deployment"
+  dependsOn: CI
+  condition: succeeded()
+  jobs:
+  - deployment: DeployInfra
+    displayName: "Terraform Apply"
+    environment: "Production"   # Approval gate configured in ADO Environments
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - task: TerraformInstaller@0
+              inputs:
+                terraformVersion: $(terraformVersion)
+
+            - script: |
+                terraform apply -auto-approve tfplan
+              displayName: "Terraform Apply"
