@@ -8,6 +8,7 @@ stages:
 - stage: Terraform
   jobs:
   - job: TerraformJob
+
     steps:
 
     - checkout: self
@@ -18,6 +19,15 @@ stages:
         sudo mv terraform /usr/local/bin/
         terraform version
       displayName: Install Terraform
+
+    - task: AzureCLI@2
+      displayName: Azure Login
+      inputs:
+        azureSubscription: 'sc-azure-infra-latest'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az account show
 
     - bash: terraform init
       displayName: Terraform Init
