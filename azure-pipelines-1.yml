@@ -1,8 +1,12 @@
 trigger:
   branches:
     include:
-      - feature1e     # CI trigger on feature branches
-      - main          # optional
+      - main
+
+pr:
+  branches:
+    include:
+      - main
 
 # Variables (secure ones like client secret should be stored in Library)
 variables:
