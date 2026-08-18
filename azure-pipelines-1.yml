@@ -1,45 +1,33 @@
 trigger:
-- main
+  branches:
+    include:
+      - main
 
 pool:
-  vmImage: ubuntu-latest
+  vmImage: 'ubuntu-latest'
 
-stages:
-- stage: Terraform
-  jobs:
-  - job: TerraformJob
+steps:
+  - script: |
+      sudo apt-get update
+      sudo apt-get install -y wget unzip
+      wget https://releases.hashicorp.com/terraform/1.5.0/terraform_1.5.0_linux_amd64.zip
+      unzip terraform_1.5.0_linux_amd64.zip
+      sudo mv terraform /usr/local/bin/
+      terraform -version
+    displayName: "Install Terraform"
 
-    steps:
+  - script: |
+      terraform init
+    displayName: "Terraform Init"
 
-    - checkout: self
+  - script: |
+      terraform validate
+    displayName: "Terraform Validate"
 
-    - bash: |
-        wget -q https://releases.hashicorp.com/terraform/1.13.1/terraform_1.13.1_linux_amd64.zip
-        unzip -o terraform_1.13.1_linux_amd64.zip
-        sudo mv terraform /usr/local/bin/
-        terraform version
-      displayName: Install Terraform
+  - script: |
+      terraform plan -out=tfplan
+    displayName: "Terraform Plan"
 
-    - task: AzureCLI@2
-      displayName: Azure Login
-      inputs:
-        azureSubscription: 'sc-azure-infra-latest'
-        scriptType: bash
-        scriptLocation: inlineScript
-        inlineScript: |
-          az account show
-
-    - bash: terraform init
-      displayName: Terraform Init
-
-    - bash: terraform fmt
-      displayName: Terraform Format
-
-    - bash: terraform validate
-      displayName: Terraform Validate
-
-    - bash: terraform plan
-      displayName: Terraform Plan
-
-    - bash: terraform apply -auto-approve
-      displayName: Terraform Apply
+  - script: |
+      terraform apply -auto-approve tfplan
+    displayName: "Terraform Apply"
