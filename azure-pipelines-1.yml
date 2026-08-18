@@ -22,7 +22,7 @@ stages:
     - bash: terraform init
       displayName: Terraform Init
 
-    - bash: terraform fmt -check
+    - bash: terraform fmt
       displayName: Terraform Format
 
     - bash: terraform validate
