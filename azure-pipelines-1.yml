@@ -1,12 +1,12 @@
 trigger:
   branches:
     include:
-      - feature/*     # CI trigger on feature branches
+      - feature1e     # CI trigger on feature branches
       - main          # optional
 
 # Variables (secure ones like client secret should be stored in Library)
 variables:
-  terraformVersion: '1.5.0'
+  terraformVersion: '4.80.0'
   workingDirectory: 'infra'
 
 stages:
