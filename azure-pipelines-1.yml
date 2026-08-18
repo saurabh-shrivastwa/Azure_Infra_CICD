@@ -8,78 +8,147 @@ pr:
     include:
       - main
 
-# Variables (secure ones like client secret should be stored in Library)
-variables:
-  terraformVersion: '4.80.0'
-  workingDirectory: 'infra'
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
 
 stages:
-# =========================
-# CI Stage: Code Quality & Security
-# =========================
+
+# ============================================================
+# CI - Runs on push to remote repository
+# ============================================================
+
 - stage: CI
-  displayName: "Continuous Integration"
+  displayName: "CI - Terraform Validation & Security"
+
+  condition: ne(variables['Build.SourceBranch'], 'refs/heads/main')
+
   jobs:
-  - job: TerraformChecks
-    displayName: "Terraform Lint & Security Scan"
-    pool:
-      vmImage: 'ubuntu-latest'     # Microsoft-hosted agent
+  - job: Terraform_CI
+    displayName: "Terraform CI"
+
     steps:
-      - script: |
-          sudo apt-get update
-          sudo apt-get install -y wget unzip
-          curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install.sh | bash
-          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install.sh | bash
-          curl -s https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | bash
-        displayName: "Install TFLint, tfsec, Gitleaks"
 
-      - task: TerraformInstaller@0
-        inputs:
-          terraformVersion: $(terraformVersion)
+    - checkout: self
+      fetchDepth: 0
 
-      - script: |
-          echo "Running TFLint..."
-          tflint --init
-          tflint
-        displayName: "Run TFLint"
+    # Install Terraform
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y unzip
+        wget -q https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip
+        unzip terraform_1.9.8_linux_amd64.zip
+        sudo mv terraform /usr/local/bin/
+        terraform version
+      displayName: "Install Terraform"
 
-      - script: |
-          echo "Running tfsec..."
-          tfsec $(workingDirectory)
-        displayName: "Run tfsec"
+    # Terraform Format
+    - script: |
+        terraform fmt -check -recursive
+      displayName: "Terraform Format Check"
 
-      - script: |
-          echo "Running Gitleaks..."
-          gitleaks detect --source $(workingDirectory)
-        displayName: "Run Gitleaks"
+    # Terraform Init
+    - script: |
+        terraform init -backend=false
+      displayName: "Terraform Init"
 
-      - script: |
-          terraform init
-          terraform validate
-          terraform plan -out=tfplan
-        displayName: "Terraform Validate & Plan"
+    # Terraform Validate
+    - script: |
+        terraform validate
+      displayName: "Terraform Validate"
 
-# =========================
-# CD Stage: Deployment (Manual Approval)
-# =========================
+    # TFLint
+    - script: |
+        curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+        tflint --version
+        tflint --init
+        tflint
+      displayName: "TFLint Security / Quality Check"
+
+    # tfsec
+    - script: |
+        curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+        tfsec .
+      displayName: "tfsec Security Scan"
+
+    # Gitleaks
+    - script: |
+        curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/scripts/install.sh | sh -s -- -b /usr/local/bin
+        gitleaks version
+        gitleaks detect --source . --no-banner --redact
+      displayName: "Gitleaks Secret Scan"
+
+
+# ============================================================
+# CD - Runs after merge into main
+# Security checks run again + Terraform Plan
+# ============================================================
+
 - stage: CD
-  displayName: "Continuous Deployment"
-  dependsOn: CI
-  condition: succeeded()
-  jobs:
-  - deployment: DeployInfra
-    displayName: "Terraform Apply"
-    environment: "Production"   # Approval gate configured in ADO Environments
-    pool:
-      vmImage: 'ubuntu-latest'
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-            - task: TerraformInstaller@0
-              inputs:
-                terraformVersion: $(terraformVersion)
+  displayName: "CD - Security Recheck & Terraform Plan"
 
-            - script: |
-                terraform apply -auto-approve tfplan
-              displayName: "Terraform Apply"
+  condition: eq(variables['Build.SourceBranch'], 'refs/heads/main')
+
+  jobs:
+  - job: Terraform_Plan
+    displayName: "Terraform Plan"
+
+    steps:
+
+    - checkout: self
+      fetchDepth: 0
+
+    # Install Terraform
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y unzip
+        wget -q https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip
+        unzip terraform_1.9.8_linux_amd64.zip
+        sudo mv terraform /usr/local/bin/
+        terraform version
+      displayName: "Install Terraform"
+
+    # Terraform Init
+    - script: |
+        terraform init -backend=false
+      displayName: "Terraform Init"
+
+    # TFLint Recheck
+    - script: |
+        curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+        tflint --version
+        tflint --init
+        tflint
+      displayName: "TFLint Recheck"
+
+    # tfsec Recheck
+    - script: |
+        curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+        tfsec .
+      displayName: "tfsec Recheck"
+
+    # Gitleaks Recheck
+    - script: |
+        curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/scripts/install.sh | sh -s -- -b /usr/local/bin
+        gitleaks version
+        gitleaks detect --source . --no-banner --redact
+      displayName: "Gitleaks Recheck"
+
+    # Terraform Format
+    - script: |
+        terraform fmt -check -recursive
+      displayName: "Terraform Format Check"
+
+    # Terraform Validate
+    - script: |
+        terraform validate
+      displayName: "Terraform Validate"
+
+    # Terraform Plan
+    - script: |
+        terraform plan -out=tfplan
+      displayName: "Terraform Plan"
